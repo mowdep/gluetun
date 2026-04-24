@@ -55,13 +55,13 @@ type lookupIPAddrFunc func(ctx context.Context, host string) (ips []netip.Addr, 
 
 func resolveWireguardEndpoint(ctx context.Context, connection models.Connection,
 	ipv6Supported bool, logger wireguard.Logger,
-) (resolved models.Connection, err error) {
+) (connectionWithResolvedIP models.Connection, err error) {
 	return resolveWireguardEndpointWithLookup(ctx, connection, ipv6Supported, logger, lookupIPAddrs)
 }
 
 func resolveWireguardEndpointWithLookup(ctx context.Context, connection models.Connection,
 	ipv6Supported bool, logger wireguard.Logger, lookup lookupIPAddrFunc,
-) (resolved models.Connection, err error) {
+) (connectionWithResolvedIP models.Connection, err error) {
 	if connection.Hostname == "" {
 		return connection, nil
 	}

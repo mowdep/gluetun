@@ -109,7 +109,7 @@ func splitWireguardEndpoint(endpoint string) (host, port string, portSet bool) {
 		return endpoint, "", false
 	case strings.HasPrefix(endpoint, "[") && strings.HasSuffix(endpoint, "]"):
 		return strings.TrimPrefix(strings.TrimSuffix(endpoint, "]"), "["), "", false
-	case isHostWithTrailingColon(endpoint):
+	case isHostnameWithEmptyPort(endpoint):
 		return strings.TrimSuffix(endpoint, ":"), "", true
 	default:
 		ip, parseErr := netip.ParseAddr(endpoint)
@@ -120,7 +120,7 @@ func splitWireguardEndpoint(endpoint string) (host, port string, portSet bool) {
 	}
 }
 
-func isHostWithTrailingColon(endpoint string) bool {
+func isHostnameWithEmptyPort(endpoint string) bool {
 	return strings.HasSuffix(endpoint, ":") &&
 		strings.Count(strings.TrimSuffix(endpoint, ":"), ":") == 0
 }
