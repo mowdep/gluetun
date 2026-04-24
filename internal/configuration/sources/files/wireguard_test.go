@@ -145,6 +145,7 @@ func Test_parseWireguardPeerSection(t *testing.T) {
 		iniData      string
 		preSharedKey *string
 		publicKey    *string
+		endpointHost *string
 		endpointIP   *string
 		endpointPort *string
 		errMessage   string
@@ -157,18 +158,24 @@ PublicKey = QOlCgyA/Sn/c/+YNTIEohrjm8IZV+OZ2AUFIoX20sk8=`,
 		"endpoint_only_host": {
 			iniData: `[Peer]
 Endpoint = x`,
-			endpointIP: ptrTo("x"),
+			endpointHost: ptrTo("x"),
 		},
 		"endpoint_no_port": {
 			iniData: `[Peer]
 Endpoint = x:`,
-			endpointIP:   ptrTo("x"),
+			endpointHost: ptrTo("x"),
 			endpointPort: ptrTo(""),
 		},
 		"valid_endpoint": {
 			iniData: `[Peer]
 Endpoint = 1.2.3.4:51820`,
 			endpointIP:   ptrTo("1.2.3.4"),
+			endpointPort: ptrTo("51820"),
+		},
+		"hostname_endpoint": {
+			iniData: `[Peer]
+Endpoint = vpn.example.com:51820`,
+			endpointHost: ptrTo("vpn.example.com"),
 			endpointPort: ptrTo("51820"),
 		},
 		"all_set": {
@@ -182,7 +189,8 @@ Endpoint = 1.2.3.4:51820`,
 		"ipv6_endpoint": {
 			iniData: `[Peer]
 Endpoint = [2a02:bbbb:aaaa:8075::10]:51820`,
-			endpointIP: ptrTo("2a02:bbbb:aaaa:8075::10"),
+			endpointIP:   ptrTo("2a02:bbbb:aaaa:8075::10"),
+			endpointPort: ptrTo("51820"),
 		},
 	}
 
@@ -195,11 +203,12 @@ Endpoint = [2a02:bbbb:aaaa:8075::10]:51820`,
 			iniSection, err := iniFile.GetSection("Peer")
 			require.NoError(t, err)
 
-			preSharedKey, publicKey, endpointIP,
+			preSharedKey, publicKey, endpointHost, endpointIP,
 				endpointPort := parseWireguardPeerSection(iniSection)
 
 			assert.Equal(t, testCase.preSharedKey, preSharedKey)
 			assert.Equal(t, testCase.publicKey, publicKey)
+			assert.Equal(t, testCase.endpointHost, endpointHost)
 			assert.Equal(t, testCase.endpointIP, endpointIP)
 			assert.Equal(t, testCase.endpointPort, endpointPort)
 			if testCase.errMessage != "" {

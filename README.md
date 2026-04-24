@@ -126,6 +126,38 @@ services:
       - UPDATER_PERIOD=
 ```
 
+For custom WireGuard providers, you can now set either `WIREGUARD_ENDPOINT_IP` or
+`WIREGUARD_ENDPOINT_HOST` together with `WIREGUARD_ENDPOINT_PORT`.
+If both are set, `WIREGUARD_ENDPOINT_HOST` takes priority and Gluetun resolves it
+before configuring WireGuard and the firewall.
+If DNS resolution fails, Gluetun stops with a fail-closed error and does not fall
+back to `WIREGUARD_ENDPOINT_IP`.
+
+```yml
+services:
+  gluetun:
+    image: qmcgaw/gluetun
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - VPN_SERVICE_PROVIDER=custom
+      - VPN_TYPE=wireguard
+      - WIREGUARD_PUBLIC_KEY=
+      - WIREGUARD_PRIVATE_KEY=
+      - WIREGUARD_ADDRESSES=10.64.222.21/32
+      - WIREGUARD_ENDPOINT_HOST=vpn.example.com
+      - WIREGUARD_ENDPOINT_PORT=51820
+```
+
+The same applies when using `wg0.conf`, for example:
+
+```ini
+[Peer]
+Endpoint = vpn.example.com:51820
+```
+
 🆕 Image also available as `ghcr.io/qdm12/gluetun`
 
 ## Fun graphs

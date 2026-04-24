@@ -25,6 +25,11 @@ func setupAmneziaWg(ctx context.Context, netlinker NetLinker,
 		return nil, models.Connection{}, fmt.Errorf("finding a VPN server: %w", err)
 	}
 
+	connection, err = resolveWireguardEndpoint(ctx, connection, ipv6SupportLevel.IsSupported(), logger)
+	if err != nil {
+		return nil, models.Connection{}, fmt.Errorf("resolving Wireguard endpoint: %w", err)
+	}
+
 	amneziaWGSettings := buildAmneziaWgSettings(connection, settings.AmneziaWg, ipv6SupportLevel.IsSupported())
 
 	logger.Debug("Amneziawg server public key: " + amneziaWGSettings.Wireguard.PublicKey)

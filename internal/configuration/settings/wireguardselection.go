@@ -3,6 +3,7 @@ package settings
 import (
 	"fmt"
 	"net/netip"
+	"regexp"
 
 	"github.com/qdm12/gluetun/internal/constants/providers"
 	"github.com/qdm12/gosettings"
@@ -13,6 +14,12 @@ import (
 )
 
 type WireguardSelection struct {
+	// EndpointHost is the server endpoint hostname or FQDN.
+	// It is notably required with the custom provider when
+	// no endpoint IP is set. When both EndpointHost and
+	// EndpointIP are set, EndpointHost takes precedence and
+	// is resolved to an IP address before connecting.
+	EndpointHost string `json:"endpoint_host"`
 	// EndpointIP is the server endpoint IP address.
 	// It is notably required with the custom provider.
 	// Otherwise it overrides any IP address from the picked
@@ -33,6 +40,9 @@ type WireguardSelection struct {
 	PublicKey string `json:"public_key"`
 }
 
+var wireguardEndpointHostRegex = regexp.MustCompile(
+	`^(?i:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.?)$`)
+
 // Validate validates WireguardSelection settings.
 // It should only be ran if the VPN type chosen is Wireguard.
 func (w WireguardSelection) validate(vpnProvider string) (err error) {
@@ -43,8 +53,14 @@ func (w WireguardSelection) validate(vpnProvider string) (err error) {
 		providers.Surfshark, providers.Windscribe:
 		// endpoint IP addresses are baked in
 	case providers.Custom:
-		if !w.EndpointIP.IsValid() || w.EndpointIP.IsUnspecified() {
-			return fmt.Errorf("%w", ErrWireguardEndpointIPNotSet)
+		switch {
+		case w.EndpointHost != "":
+			err := validateWireguardEndpointHost(w.EndpointHost)
+			if err != nil {
+				return err
+			}
+		case !w.EndpointIP.IsValid() || w.EndpointIP.IsUnspecified():
+			return fmt.Errorf("%w", ErrWireguardEndpointHostOrIPNotSet)
 		}
 	default: // Providers not supporting Wireguard
 	}
@@ -113,6 +129,7 @@ func (w WireguardSelection) validate(vpnProvider string) (err error) {
 
 func (w *WireguardSelection) copy() (copied WireguardSelection) {
 	return WireguardSelection{
+		EndpointHost: w.EndpointHost,
 		EndpointIP:   w.EndpointIP,
 		EndpointPort: gosettings.CopyPointer(w.EndpointPort),
 		PublicKey:    w.PublicKey,
@@ -120,12 +137,14 @@ func (w *WireguardSelection) copy() (copied WireguardSelection) {
 }
 
 func (w *WireguardSelection) overrideWith(other WireguardSelection) {
+	w.EndpointHost = gosettings.OverrideWithComparable(w.EndpointHost, other.EndpointHost)
 	w.EndpointIP = gosettings.OverrideWithValidator(w.EndpointIP, other.EndpointIP)
 	w.EndpointPort = gosettings.OverrideWithPointer(w.EndpointPort, other.EndpointPort)
 	w.PublicKey = gosettings.OverrideWithComparable(w.PublicKey, other.PublicKey)
 }
 
 func (w *WireguardSelection) setDefaults() {
+	w.EndpointHost = gosettings.DefaultComparable(w.EndpointHost, "")
 	w.EndpointIP = gosettings.DefaultValidator(w.EndpointIP, netip.IPv4Unspecified())
 	w.EndpointPort = gosettings.DefaultPointer(w.EndpointPort, 0)
 }
@@ -136,6 +155,10 @@ func (w WireguardSelection) String() string {
 
 func (w WireguardSelection) toLinesNode() (node *gotree.Node) {
 	node = gotree.New("Wireguard selection settings:")
+
+	if w.EndpointHost != "" {
+		node.Appendf("Endpoint host: %s", w.EndpointHost)
+	}
 
 	if !w.EndpointIP.IsUnspecified() {
 		node.Appendf("Endpoint IP address: %s", w.EndpointIP)
@@ -163,11 +186,27 @@ func (w *WireguardSelection) read(r *reader.Reader, amneziaWG bool) (err error) 
 			"see https://github.com/qdm12/gluetun/issues/788", err)
 	}
 
+	w.EndpointHost = r.String(prefix+"_ENDPOINT_HOST",
+		reader.RetroKeys("VPN_ENDPOINT_HOST"),
+		reader.ForceLowercase(false))
+
 	w.EndpointPort, err = r.Uint16Ptr(prefix+"_ENDPOINT_PORT", reader.RetroKeys("VPN_ENDPOINT_PORT"))
 	if err != nil {
 		return err
 	}
 
 	w.PublicKey = r.String(prefix+"_PUBLIC_KEY", reader.ForceLowercase(false))
+	return nil
+}
+
+func validateWireguardEndpointHost(host string) (err error) {
+	if ip, parseErr := netip.ParseAddr(host); parseErr == nil && ip.IsValid() {
+		return fmt.Errorf("%w: %q must be a hostname or FQDN and not an IP address",
+			ErrWireguardEndpointHostNotValid, host)
+	}
+	if !wireguardEndpointHostRegex.MatchString(host) {
+		return fmt.Errorf("%w: %q must be a valid hostname or FQDN",
+			ErrWireguardEndpointHostNotValid, host)
+	}
 	return nil
 }

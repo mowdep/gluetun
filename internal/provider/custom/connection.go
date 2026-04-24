@@ -56,6 +56,7 @@ func getWireguardConnection(selection settings.ServerSelection) (
 ) {
 	connection = models.Connection{
 		Type:        vpn.Wireguard,
+		Hostname:    selection.Wireguard.EndpointHost,
 		IP:          selection.Wireguard.EndpointIP,
 		Port:        *selection.Wireguard.EndpointPort,
 		Protocol:    constants.UDP,
