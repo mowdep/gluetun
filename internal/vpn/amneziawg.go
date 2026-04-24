@@ -27,7 +27,7 @@ func setupAmneziaWg(ctx context.Context, netlinker NetLinker,
 
 	connection, err = resolveWireguardEndpoint(ctx, connection, ipv6SupportLevel.IsSupported(), logger)
 	if err != nil {
-		return nil, models.Connection{}, fmt.Errorf("resolving Wireguard endpoint: %w", err)
+		return nil, models.Connection{}, fmt.Errorf("resolving WireGuard endpoint: %w", err)
 	}
 
 	amneziaWGSettings := buildAmneziaWgSettings(connection, settings.AmneziaWg, ipv6SupportLevel.IsSupported())

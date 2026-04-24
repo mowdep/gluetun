@@ -29,7 +29,7 @@ func setupWireguard(ctx context.Context, netlinker NetLinker,
 
 	connection, err = resolveWireguardEndpoint(ctx, connection, ipv6SupportLevel.IsSupported(), logger)
 	if err != nil {
-		return nil, models.Connection{}, fmt.Errorf("resolving Wireguard endpoint: %w", err)
+		return nil, models.Connection{}, fmt.Errorf("resolving WireGuard endpoint: %w", err)
 	}
 
 	wireguardSettings := buildWireguardSettings(connection, settings.Wireguard, ipv6SupportLevel.IsSupported())
@@ -66,11 +66,11 @@ func resolveWireguardEndpointWithLookup(ctx context.Context, connection models.C
 		return connection, nil
 	}
 
-	logger.Info("🔎 resolving Wireguard endpoint hostname " + connection.Hostname)
+	logger.Info("🔎 resolving WireGuard endpoint hostname " + connection.Hostname)
 
 	ips, err := lookup(ctx, connection.Hostname)
 	if err != nil {
-		logger.Error("❌ failed to resolve Wireguard endpoint hostname " + connection.Hostname +
+		logger.Error("❌ failed to resolve WireGuard endpoint hostname " + connection.Hostname +
 			": " + err.Error() + " (fail-closed)")
 		return models.Connection{}, fmt.Errorf("resolving hostname %q: %w (fail-closed)",
 			connection.Hostname, err)
@@ -78,13 +78,13 @@ func resolveWireguardEndpointWithLookup(ctx context.Context, connection models.C
 
 	connection.IP, err = pickWireguardEndpointIP(ips, ipv6Supported)
 	if err != nil {
-		logger.Error("❌ failed to resolve Wireguard endpoint hostname " + connection.Hostname +
+		logger.Error("❌ failed to resolve WireGuard endpoint hostname " + connection.Hostname +
 			": " + err.Error() + " (fail-closed)")
 		return models.Connection{}, fmt.Errorf("resolving hostname %q: %w (fail-closed)",
 			connection.Hostname, err)
 	}
 
-	logger.Info("✅ resolved Wireguard endpoint hostname " + connection.Hostname +
+	logger.Info("✅ resolved WireGuard endpoint hostname " + connection.Hostname +
 		" to " + connection.IP.String())
 	return connection, nil
 }
