@@ -11,6 +11,7 @@ import (
 	"github.com/qdm12/gluetun/internal/models"
 	"github.com/qdm12/gluetun/internal/wireguard"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type testNoopLogger struct{}
@@ -141,6 +142,38 @@ func Test_resolveWireguardEndpointWithLookup(t *testing.T) {
 				Port:     51820,
 			},
 		},
+		"hostname_keeps_connection_fields": {
+			connection: models.Connection{
+				Type:        "wireguard",
+				Hostname:    hostname,
+				Port:        51820,
+				PubKey:      "pubkey",
+				ServerName:  "server",
+				PortForward: true,
+			},
+			lookup: func(_ context.Context, _ string) ([]netip.Addr, error) {
+				return []netip.Addr{netip.MustParseAddr("1.2.3.4")}, nil
+			},
+			expected: models.Connection{
+				Type:        "wireguard",
+				Hostname:    hostname,
+				IP:          netip.MustParseAddr("1.2.3.4"),
+				Port:        51820,
+				PubKey:      "pubkey",
+				ServerName:  "server",
+				PortForward: true,
+			},
+		},
+		"hostname_resolution_without_ips_is_fail_closed": {
+			connection: models.Connection{
+				Hostname: hostname,
+				Port:     51820,
+			},
+			lookup: func(_ context.Context, _ string) ([]netip.Addr, error) {
+				return nil, nil
+			},
+			errMessage: `resolving hostname "vpn.example.com": no IPv4 address found (fail-closed)`,
+		},
 		"hostname_resolution_failure_is_fail_closed": {
 			connection: models.Connection{
 				Hostname: hostname,
@@ -168,4 +201,75 @@ func Test_resolveWireguardEndpointWithLookup(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_pickWireguardEndpointIP(t *testing.T) {
+	t.Parallel()
+
+	testCases := map[string]struct {
+		ips           []netip.Addr
+		ipv6Supported bool
+		expectedIP    netip.Addr
+		errMessage    string
+	}{
+		"prefer_ipv6_when_supported": {
+			ips: []netip.Addr{
+				netip.MustParseAddr("1.2.3.4"),
+				netip.MustParseAddr("2001:db8::1"),
+			},
+			ipv6Supported: true,
+			expectedIP:    netip.MustParseAddr("2001:db8::1"),
+		},
+		"fallback_to_ipv4_when_ipv6_not_supported": {
+			ips: []netip.Addr{
+				netip.MustParseAddr("2001:db8::1"),
+				netip.MustParseAddr("1.2.3.4"),
+			},
+			expectedIP: netip.MustParseAddr("1.2.3.4"),
+		},
+		"error_without_ipv4_when_ipv6_not_supported": {
+			ips: []netip.Addr{
+				netip.MustParseAddr("2001:db8::1"),
+			},
+			errMessage: "no IPv4 address found",
+		},
+		"error_without_any_ip_when_ipv6_supported": {
+			errMessage: "no IPv4 address found",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			ip, err := pickWireguardEndpointIP(testCase.ips, testCase.ipv6Supported)
+
+			assert.Equal(t, testCase.expectedIP, ip)
+			if testCase.errMessage != "" {
+				assert.EqualError(t, err, testCase.errMessage)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func Test_lookupIPAddrs(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ips, err := lookupIPAddrs(ctx, "localhost")
+	require.NoError(t, err)
+	require.NotEmpty(t, ips)
+
+	foundLoopback := false
+	for _, ip := range ips {
+		if ip.IsLoopback() {
+			foundLoopback = true
+			break
+		}
+	}
+	assert.True(t, foundLoopback)
 }

@@ -70,6 +70,24 @@ PresharedKey = YJ680VN+dGrdsWNjSFqZ6vvwuiNhbq502ZL3G7Q3o3g=
 				Addresses:    ptrTo("10.38.22.35/32"),
 			},
 		},
+		"success_with_hostname_endpoint": {
+			fileContent: `
+[Interface]
+PrivateKey = QOlCgyA/Sn/c/+YNTIEohrjm8IZV+OZ2AUFIoX20sk8=
+Address = 10.38.22.35/32
+
+[Peer]
+PublicKey = YJ680VN+dGrdsWNjSFqZ6vvwuiNhbq502ZL3G7Q3o3g=
+Endpoint = vpn.example.com:51820
+`,
+			wireguard: WireguardConfig{
+				PrivateKey:   ptrTo("QOlCgyA/Sn/c/+YNTIEohrjm8IZV+OZ2AUFIoX20sk8="),
+				Addresses:    ptrTo("10.38.22.35/32"),
+				PublicKey:    ptrTo("YJ680VN+dGrdsWNjSFqZ6vvwuiNhbq502ZL3G7Q3o3g="),
+				EndpointHost: ptrTo("vpn.example.com"),
+				EndpointPort: ptrTo("51820"),
+			},
+		},
 	}
 
 	for testName, testCase := range testCases {
@@ -216,6 +234,65 @@ Endpoint = [2a02:bbbb:aaaa:8075::10]:51820`,
 			} else {
 				assert.NoError(t, err)
 			}
+		})
+	}
+}
+
+func Test_splitWireguardEndpoint(t *testing.T) {
+	t.Parallel()
+
+	testCases := map[string]struct {
+		endpoint string
+		host     string
+		port     string
+		portSet  bool
+	}{
+		"hostname_and_port": {
+			endpoint: "vpn.example.com:51820",
+			host:     "vpn.example.com",
+			port:     "51820",
+			portSet:  true,
+		},
+		"hostname_without_port": {
+			endpoint: "vpn.example.com",
+			host:     "vpn.example.com",
+		},
+		"hostname_with_empty_port": {
+			endpoint: "vpn.example.com:",
+			host:     "vpn.example.com",
+			portSet:  true,
+		},
+		"ipv4_and_port": {
+			endpoint: "1.2.3.4:51820",
+			host:     "1.2.3.4",
+			port:     "51820",
+			portSet:  true,
+		},
+		"ipv6_bracketed_and_port": {
+			endpoint: "[2001:db8::1]:51820",
+			host:     "2001:db8::1",
+			port:     "51820",
+			portSet:  true,
+		},
+		"ipv6_bracketed_without_port": {
+			endpoint: "[2001:db8::1]",
+			host:     "2001:db8::1",
+		},
+		"ipv6_without_port": {
+			endpoint: "2001:db8::1",
+			host:     "2001:db8::1",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			host, port, portSet := splitWireguardEndpoint(testCase.endpoint)
+
+			assert.Equal(t, testCase.host, host)
+			assert.Equal(t, testCase.port, port)
+			assert.Equal(t, testCase.portSet, portSet)
 		})
 	}
 }
