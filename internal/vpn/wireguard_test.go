@@ -234,7 +234,8 @@ func Test_pickWireguardEndpointIP(t *testing.T) {
 			errMessage: "no IPv4 address found",
 		},
 		"error_without_any_ip_when_ipv6_supported": {
-			errMessage: "no IPv4 address found",
+			ipv6Supported: true,
+			errMessage:    "no suitable IP address found",
 		},
 	}
 

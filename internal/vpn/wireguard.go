@@ -123,7 +123,7 @@ func pickWireguardEndpointIP(ips []netip.Addr, ipv6Supported bool) (ip netip.Add
 	}
 
 	if ipv6Supported {
-		return netip.Addr{}, fmt.Errorf("no IPv4 or IPv6 address found")
+		return netip.Addr{}, fmt.Errorf("no suitable IP address found")
 	}
 	return netip.Addr{}, fmt.Errorf("no IPv4 address found")
 }
