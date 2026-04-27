@@ -14,13 +14,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type testNoopLogger struct{}
+type noopWireguardLogger struct{}
 
-func (testNoopLogger) Debug(string)                  {}
-func (testNoopLogger) Debugf(string, ...interface{}) {}
-func (testNoopLogger) Info(string)                   {}
-func (testNoopLogger) Error(string)                  {}
-func (testNoopLogger) Errorf(string, ...any)         {}
+func (noopWireguardLogger) Debug(string)                  {}
+func (noopWireguardLogger) Debugf(string, ...interface{}) {}
+func (noopWireguardLogger) Info(string)                   {}
+func (noopWireguardLogger) Error(string)                  {}
+func (noopWireguardLogger) Errorf(string, ...any)         {}
 
 func Test_buildWireguardSettings(t *testing.T) {
 	t.Parallel()
@@ -191,7 +191,7 @@ func Test_resolveWireguardEndpointWithLookup(t *testing.T) {
 			t.Parallel()
 
 			connection, err := resolveWireguardEndpointWithLookup(context.Background(),
-				testCase.connection, testCase.ipv6Supported, testNoopLogger{}, testCase.lookup)
+				testCase.connection, testCase.ipv6Supported, noopWireguardLogger{}, testCase.lookup)
 
 			assert.Equal(t, testCase.expected, connection)
 			if testCase.errMessage != "" {

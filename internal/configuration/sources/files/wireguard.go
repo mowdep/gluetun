@@ -121,8 +121,11 @@ func splitWireguardEndpoint(endpoint string) (host, port string, portSet bool) {
 }
 
 func isHostnameWithEmptyPort(endpoint string) bool {
-	return strings.HasSuffix(endpoint, ":") &&
-		strings.Count(strings.TrimSuffix(endpoint, ":"), ":") == 0
+	if !strings.HasSuffix(endpoint, ":") {
+		return false
+	}
+	trimmedEndpoint := strings.TrimSuffix(endpoint, ":")
+	return strings.Count(trimmedEndpoint, ":") == 0
 }
 
 var regexINIKeyNotExist = regexp.MustCompile(`key ".*" not exists$`)

@@ -4,10 +4,12 @@ package tcp
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"testing"
 	"time"
 
+	"github.com/qdm12/gluetun/internal/firewall/iptables"
 	"github.com/qdm12/gluetun/internal/netlink"
 	"github.com/qdm12/gluetun/internal/pmtud/constants"
 	"github.com/stretchr/testify/assert"
@@ -52,6 +54,12 @@ func Test_findHighestMSSDestination(t *testing.T) {
 
 	dst, mss, err := findHighestMSSDestination(t.Context(), familyToFD, dsts,
 		excludeMark, defaultMTU, timeout, tracker, fw, logger)
+	switch {
+	case errors.Is(err, iptables.ErrMarkMatchModuleMissing):
+		t.Skip("mark match module is not available, skipping TCP PMTUD tests")
+	case errors.Is(err, errTCPServersUnreachable):
+		t.Skip("TCP PMTUD destinations are unreachable from this environment")
+	}
 	require.NoError(t, err, "finding highest MSS destination")
 	assert.Contains(t, dsts, dst, "destination should be in the provided list")
 	assert.Greater(t, mss, uint32(1000), "MSS should be greater than 1000")

@@ -11,7 +11,7 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
-func newWireguardPublicKey(t *testing.T) string {
+func generateTestPublicKey(t *testing.T) string {
 	t.Helper()
 
 	key, err := wgtypes.GeneratePrivateKey()
@@ -23,7 +23,7 @@ func newWireguardPublicKey(t *testing.T) string {
 func Test_WireguardSelection_validate(t *testing.T) {
 	t.Parallel()
 
-	publicKey := newWireguardPublicKey(t)
+	publicKey := generateTestPublicKey(t)
 
 	testCases := map[string]struct {
 		selection  WireguardSelection
@@ -234,23 +234,24 @@ func Test_WireguardSelection_toLinesNode(t *testing.T) {
 └── Server public key: public`, selection.String())
 }
 
-type mapSource struct {
+type testMapSource struct {
 	values map[string]string
 }
 
-func newMapSource(keyValues []sourceKeyValue) *mapSource {
+func newMapSource(keyValues []sourceKeyValue) *testMapSource {
 	values := make(map[string]string, len(keyValues))
 	for _, keyValue := range keyValues {
 		values[keyValue.key] = keyValue.value
 	}
-	return &mapSource{values: values}
+	return &testMapSource{values: values}
 }
 
-func (s *mapSource) Get(key string) (value string, isSet bool) {
+func (s *testMapSource) Get(key string) (value string, isSet bool) {
 	value, isSet = s.values[key]
 	return value, isSet
 }
 
-func (s *mapSource) KeyTransform(key string) string { return key }
+// KeyTransform preserves the key unchanged so tests can define exact reader keys.
+func (s *testMapSource) KeyTransform(key string) string { return key }
 
-func (s *mapSource) String() string { return "map source" }
+func (s *testMapSource) String() string { return "map source" }
