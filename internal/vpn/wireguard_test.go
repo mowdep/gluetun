@@ -277,11 +277,15 @@ func Test_lookupIPAddrs(t *testing.T) {
 }
 
 type fakeIPAddrResolver struct {
-	ips []net.IPAddr
-	err error
+	ips   []net.IPAddr
+	err   error
+	calls *int
 }
 
 func (r fakeIPAddrResolver) LookupIPAddr(_ context.Context, _ string) ([]net.IPAddr, error) {
+	if r.calls != nil {
+		*r.calls = *r.calls + 1
+	}
 	if r.err != nil {
 		return nil, r.err
 	}
@@ -295,24 +299,40 @@ func Test_lookupIPAddrsWithResolvers(t *testing.T) {
 		resolvers  []namedIPAddrResolver
 		expected   []netip.Addr
 		errMessage string
+		callCount  *int
 	}{
-		"first_resolver_success": {
-			resolvers: []namedIPAddrResolver{
-				{
-					name: "system DNS",
-					resolver: fakeIPAddrResolver{
-						ips: []net.IPAddr{{IP: net.ParseIP("1.2.3.4")}},
+		"first_resolver_success": func() struct {
+			resolvers  []namedIPAddrResolver
+			expected   []netip.Addr
+			errMessage string
+			callCount  *int
+		} {
+			secondResolverCalls := 0
+			return struct {
+				resolvers  []namedIPAddrResolver
+				expected   []netip.Addr
+				errMessage string
+				callCount  *int
+			}{
+				resolvers: []namedIPAddrResolver{
+					{
+						name: "system DNS",
+						resolver: fakeIPAddrResolver{
+							ips: []net.IPAddr{{IP: net.ParseIP("1.2.3.4")}},
+						},
+					},
+					{
+						name: "public DoH fallback",
+						resolver: fakeIPAddrResolver{
+							err:   errors.New("should not be called"),
+							calls: &secondResolverCalls,
+						},
 					},
 				},
-				{
-					name: "public DoH fallback",
-					resolver: fakeIPAddrResolver{
-						err: errors.New("should not be called"),
-					},
-				},
-			},
-			expected: []netip.Addr{netip.MustParseAddr("1.2.3.4")},
-		},
+				expected:  []netip.Addr{netip.MustParseAddr("1.2.3.4")},
+				callCount: &secondResolverCalls,
+			}
+		}(),
 		"fallback_resolver_success": {
 			resolvers: []namedIPAddrResolver{
 				{
@@ -371,6 +391,9 @@ func Test_lookupIPAddrsWithResolvers(t *testing.T) {
 				assert.EqualError(t, err, testCase.errMessage)
 			} else {
 				assert.NoError(t, err)
+			}
+			if testCase.callCount != nil {
+				assert.Zero(t, *testCase.callCount)
 			}
 		})
 	}
