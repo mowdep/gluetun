@@ -3,6 +3,7 @@ package vpn
 import (
 	"context"
 	"errors"
+	"net"
 	"net/netip"
 	"testing"
 	"time"
@@ -273,4 +274,104 @@ func Test_lookupIPAddrs(t *testing.T) {
 		}
 	}
 	assert.True(t, foundLoopback)
+}
+
+type fakeIPAddrResolver struct {
+	ips []net.IPAddr
+	err error
+}
+
+func (r fakeIPAddrResolver) LookupIPAddr(_ context.Context, _ string) ([]net.IPAddr, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return r.ips, nil
+}
+
+func Test_lookupIPAddrsWithResolvers(t *testing.T) {
+	t.Parallel()
+
+	testCases := map[string]struct {
+		resolvers  []namedIPAddrResolver
+		expected   []netip.Addr
+		errMessage string
+	}{
+		"first_resolver_success": {
+			resolvers: []namedIPAddrResolver{
+				{
+					name: "system DNS",
+					resolver: fakeIPAddrResolver{
+						ips: []net.IPAddr{{IP: net.ParseIP("1.2.3.4")}},
+					},
+				},
+				{
+					name: "public DoH fallback",
+					resolver: fakeIPAddrResolver{
+						err: errors.New("should not be called"),
+					},
+				},
+			},
+			expected: []netip.Addr{netip.MustParseAddr("1.2.3.4")},
+		},
+		"fallback_resolver_success": {
+			resolvers: []namedIPAddrResolver{
+				{
+					name: "system DNS",
+					resolver: fakeIPAddrResolver{
+						err: errors.New("lookup failed"),
+					},
+				},
+				{
+					name: "public DoH fallback",
+					resolver: fakeIPAddrResolver{
+						ips: []net.IPAddr{
+							{IP: net.ParseIP("1.2.3.4")},
+							{IP: net.ParseIP("2001:db8::1")},
+						},
+					},
+				},
+			},
+			expected: []netip.Addr{
+				netip.MustParseAddr("1.2.3.4"),
+				netip.MustParseAddr("2001:db8::1"),
+			},
+		},
+		"all_resolvers_fail": {
+			resolvers: []namedIPAddrResolver{
+				{
+					name: "system DNS",
+					resolver: fakeIPAddrResolver{
+						err: errors.New("lookup failed"),
+					},
+				},
+				{
+					name:     "public DoH fallback",
+					resolver: fakeIPAddrResolver{},
+				},
+				{
+					name: "public DoT fallback",
+					resolver: fakeIPAddrResolver{
+						err: errors.New("timeout"),
+					},
+				},
+			},
+			errMessage: "system DNS: lookup failed\npublic DoH fallback: no IP addresses found\npublic DoT fallback: timeout",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			ips, err := lookupIPAddrsWithResolvers(context.Background(), "vpn.example.com", testCase.resolvers...)
+
+			assert.Equal(t, testCase.expected, ips)
+			if testCase.errMessage != "" {
+				require.Error(t, err)
+				assert.EqualError(t, err, testCase.errMessage)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }

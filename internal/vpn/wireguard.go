@@ -2,10 +2,14 @@ package vpn
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
 
+	dnsdoh "github.com/qdm12/dns/v2/pkg/doh"
+	dnsdot "github.com/qdm12/dns/v2/pkg/dot"
+	dnsprovider "github.com/qdm12/dns/v2/pkg/provider"
 	"github.com/qdm12/gluetun/internal/configuration/settings"
 	"github.com/qdm12/gluetun/internal/models"
 	"github.com/qdm12/gluetun/internal/netlink"
@@ -52,6 +56,14 @@ func setupWireguard(ctx context.Context, netlinker NetLinker,
 }
 
 type lookupIPAddrFunc func(ctx context.Context, host string) (ips []netip.Addr, err error)
+type ipAddrResolver interface {
+	LookupIPAddr(ctx context.Context, host string) (ips []net.IPAddr, err error)
+}
+
+type namedIPAddrResolver struct {
+	name     string
+	resolver ipAddrResolver
+}
 
 func resolveWireguardEndpoint(ctx context.Context, connection models.Connection,
 	ipv6Supported bool, logger wireguard.Logger,
@@ -90,7 +102,94 @@ func resolveWireguardEndpointWithLookup(ctx context.Context, connection models.C
 }
 
 func lookupIPAddrs(ctx context.Context, host string) (ips []netip.Addr, err error) {
-	ipAddrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	ips, err = lookupIPAddrsWithResolver(ctx, host, net.DefaultResolver)
+	if err == nil && len(ips) > 0 {
+		return ips, nil
+	}
+
+	errs := make([]error, 0, 3)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("system DNS: %w", err))
+	} else {
+		errs = append(errs, errors.New("system DNS: no IP addresses found"))
+	}
+
+	encryptedResolvers, err := newEncryptedFallbackResolvers()
+	if err != nil {
+		errs = append(errs, fmt.Errorf("creating public encrypted DNS resolvers: %w", err))
+		return nil, errors.Join(errs...)
+	}
+
+	ips, err = lookupIPAddrsWithResolvers(ctx, host, encryptedResolvers...)
+	if err != nil {
+		errs = append(errs, err)
+		return nil, errors.Join(errs...)
+	}
+
+	return ips, nil
+}
+
+func newEncryptedFallbackResolvers() (resolvers []namedIPAddrResolver, err error) {
+	upstreamResolvers := []dnsprovider.Provider{
+		dnsprovider.Cloudflare(),
+		dnsprovider.Quad9Secured(),
+	}
+
+	doHDialer, err := dnsdoh.New(dnsdoh.Settings{
+		UpstreamResolvers: upstreamResolvers,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating DoH resolver: %w", err)
+	}
+
+	doTDialer, err := dnsdot.New(dnsdot.Settings{
+		UpstreamResolvers: upstreamResolvers,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating DoT resolver: %w", err)
+	}
+
+	return []namedIPAddrResolver{
+		{
+			name: "public DoH fallback",
+			resolver: &net.Resolver{
+				PreferGo: true,
+				Dial:     doHDialer.Dial,
+			},
+		},
+		{
+			name: "public DoT fallback",
+			resolver: &net.Resolver{
+				PreferGo: true,
+				Dial:     doTDialer.Dial,
+			},
+		},
+	}, nil
+}
+
+func lookupIPAddrsWithResolvers(ctx context.Context, host string,
+	resolvers ...namedIPAddrResolver,
+) (ips []netip.Addr, err error) {
+	errs := make([]error, 0, len(resolvers))
+	for _, namedResolver := range resolvers {
+		ips, err = lookupIPAddrsWithResolver(ctx, host, namedResolver.resolver)
+		switch {
+		case err == nil && len(ips) > 0:
+			return ips, nil
+		case err != nil:
+			errs = append(errs, fmt.Errorf("%s: %w", namedResolver.name, err))
+		default:
+			errs = append(errs, fmt.Errorf("%s: no IP addresses found", namedResolver.name))
+		}
+	}
+
+	return nil, errors.Join(errs...)
+}
+
+func lookupIPAddrsWithResolver(ctx context.Context, host string,
+	resolver ipAddrResolver,
+) (ips []netip.Addr, err error) {
+	ipAddrs, err := resolver.LookupIPAddr(ctx, host)
 	if err != nil {
 		return nil, err
 	}
