@@ -107,7 +107,7 @@ func lookupIPAddrs(ctx context.Context, host string) (ips []netip.Addr, err erro
 		return ips, nil
 	}
 
-	systemResolverErr := errors.New("system DNS: no IP addresses found")
+	systemResolverErr := errors.New("system DNS: no addresses returned")
 	if err != nil {
 		systemResolverErr = fmt.Errorf("system DNS: %w", err)
 	}

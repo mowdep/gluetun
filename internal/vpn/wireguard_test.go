@@ -346,7 +346,7 @@ func Test_lookupIPAddrsWithResolvers(t *testing.T) {
 				},
 				{
 					name:     "public DoH fallback",
-					resolver: fakeIPAddrResolver{},
+					resolver: fakeIPAddrResolver{ips: []net.IPAddr{}},
 				},
 				{
 					name: "public DoT fallback",
