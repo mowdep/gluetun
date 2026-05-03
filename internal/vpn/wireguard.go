@@ -107,18 +107,19 @@ func lookupIPAddrs(ctx context.Context, host string) (ips []netip.Addr, err erro
 		return ips, nil
 	}
 
-	errs := make([]error, 0, 3)
+	systemResolverErr := errors.New("system DNS: no IP addresses found")
 	if err != nil {
-		errs = append(errs, fmt.Errorf("system DNS: %w", err))
-	} else {
-		errs = append(errs, errors.New("system DNS: no IP addresses found"))
+		systemResolverErr = fmt.Errorf("system DNS: %w", err)
 	}
 
 	encryptedResolvers, err := newEncryptedFallbackResolvers()
 	if err != nil {
-		errs = append(errs, fmt.Errorf("creating public encrypted DNS resolvers: %w", err))
-		return nil, errors.Join(errs...)
+		return nil, errors.Join(systemResolverErr,
+			fmt.Errorf("creating public encrypted DNS resolvers: %w", err))
 	}
+
+	errs := make([]error, 0, 1+len(encryptedResolvers))
+	errs = append(errs, systemResolverErr)
 
 	ips, err = lookupIPAddrsWithResolvers(ctx, host, encryptedResolvers...)
 	if err != nil {
