@@ -70,6 +70,24 @@ PresharedKey = YJ680VN+dGrdsWNjSFqZ6vvwuiNhbq502ZL3G7Q3o3g=
 				Addresses:    ptrTo("10.38.22.35/32"),
 			},
 		},
+		"success_with_hostname_endpoint": {
+			fileContent: `
+[Interface]
+PrivateKey = QOlCgyA/Sn/c/+YNTIEohrjm8IZV+OZ2AUFIoX20sk8=
+Address = 10.38.22.35/32
+
+[Peer]
+PublicKey = YJ680VN+dGrdsWNjSFqZ6vvwuiNhbq502ZL3G7Q3o3g=
+Endpoint = vpn.example.com:51820
+`,
+			wireguard: WireguardConfig{
+				PrivateKey:   ptrTo("QOlCgyA/Sn/c/+YNTIEohrjm8IZV+OZ2AUFIoX20sk8="),
+				Addresses:    ptrTo("10.38.22.35/32"),
+				PublicKey:    ptrTo("YJ680VN+dGrdsWNjSFqZ6vvwuiNhbq502ZL3G7Q3o3g="),
+				EndpointHost: ptrTo("vpn.example.com"),
+				EndpointPort: ptrTo("51820"),
+			},
+		},
 	}
 
 	for testName, testCase := range testCases {
@@ -145,6 +163,7 @@ func Test_parseWireguardPeerSection(t *testing.T) {
 		iniData      string
 		preSharedKey *string
 		publicKey    *string
+		endpointHost *string
 		endpointIP   *string
 		endpointPort *string
 		errMessage   string
@@ -157,18 +176,24 @@ PublicKey = QOlCgyA/Sn/c/+YNTIEohrjm8IZV+OZ2AUFIoX20sk8=`,
 		"endpoint_only_host": {
 			iniData: `[Peer]
 Endpoint = x`,
-			endpointIP: ptrTo("x"),
+			endpointHost: ptrTo("x"),
 		},
 		"endpoint_no_port": {
 			iniData: `[Peer]
 Endpoint = x:`,
-			endpointIP:   ptrTo("x"),
+			endpointHost: ptrTo("x"),
 			endpointPort: ptrTo(""),
 		},
 		"valid_endpoint": {
 			iniData: `[Peer]
 Endpoint = 1.2.3.4:51820`,
 			endpointIP:   ptrTo("1.2.3.4"),
+			endpointPort: ptrTo("51820"),
+		},
+		"hostname_endpoint": {
+			iniData: `[Peer]
+Endpoint = vpn.example.com:51820`,
+			endpointHost: ptrTo("vpn.example.com"),
 			endpointPort: ptrTo("51820"),
 		},
 		"all_set": {
@@ -182,7 +207,8 @@ Endpoint = 1.2.3.4:51820`,
 		"ipv6_endpoint": {
 			iniData: `[Peer]
 Endpoint = [2a02:bbbb:aaaa:8075::10]:51820`,
-			endpointIP: ptrTo("2a02:bbbb:aaaa:8075::10"),
+			endpointIP:   ptrTo("2a02:bbbb:aaaa:8075::10"),
+			endpointPort: ptrTo("51820"),
 		},
 	}
 
@@ -195,11 +221,12 @@ Endpoint = [2a02:bbbb:aaaa:8075::10]:51820`,
 			iniSection, err := iniFile.GetSection("Peer")
 			require.NoError(t, err)
 
-			preSharedKey, publicKey, endpointIP,
+			preSharedKey, publicKey, endpointHost, endpointIP,
 				endpointPort := parseWireguardPeerSection(iniSection)
 
 			assert.Equal(t, testCase.preSharedKey, preSharedKey)
 			assert.Equal(t, testCase.publicKey, publicKey)
+			assert.Equal(t, testCase.endpointHost, endpointHost)
 			assert.Equal(t, testCase.endpointIP, endpointIP)
 			assert.Equal(t, testCase.endpointPort, endpointPort)
 			if testCase.errMessage != "" {
@@ -207,6 +234,65 @@ Endpoint = [2a02:bbbb:aaaa:8075::10]:51820`,
 			} else {
 				assert.NoError(t, err)
 			}
+		})
+	}
+}
+
+func Test_splitWireguardEndpoint(t *testing.T) {
+	t.Parallel()
+
+	testCases := map[string]struct {
+		endpoint string
+		host     string
+		port     string
+		portSet  bool
+	}{
+		"hostname_and_port": {
+			endpoint: "vpn.example.com:51820",
+			host:     "vpn.example.com",
+			port:     "51820",
+			portSet:  true,
+		},
+		"hostname_without_port": {
+			endpoint: "vpn.example.com",
+			host:     "vpn.example.com",
+		},
+		"hostname_with_empty_port": {
+			endpoint: "vpn.example.com:",
+			host:     "vpn.example.com",
+			portSet:  true,
+		},
+		"ipv4_and_port": {
+			endpoint: "1.2.3.4:51820",
+			host:     "1.2.3.4",
+			port:     "51820",
+			portSet:  true,
+		},
+		"ipv6_bracketed_and_port": {
+			endpoint: "[2001:db8::1]:51820",
+			host:     "2001:db8::1",
+			port:     "51820",
+			portSet:  true,
+		},
+		"ipv6_bracketed_without_port": {
+			endpoint: "[2001:db8::1]",
+			host:     "2001:db8::1",
+		},
+		"ipv6_without_port": {
+			endpoint: "2001:db8::1",
+			host:     "2001:db8::1",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			host, port, portSet := splitWireguardEndpoint(testCase.endpoint)
+
+			assert.Equal(t, testCase.host, host)
+			assert.Equal(t, testCase.port, port)
+			assert.Equal(t, testCase.portSet, portSet)
 		})
 	}
 }

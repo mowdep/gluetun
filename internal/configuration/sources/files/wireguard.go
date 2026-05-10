@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -31,6 +32,7 @@ type WireguardConfig struct {
 	PreSharedKey *string
 	Addresses    *string
 	PublicKey    *string
+	EndpointHost *string
 	EndpointIP   *string
 	EndpointPort *string
 }
@@ -56,7 +58,7 @@ func ParseWireguardConf(path string) (config WireguardConfig, err error) {
 
 	peerSection, err := iniFile.GetSection("Peer")
 	if err == nil {
-		config.PreSharedKey, config.PublicKey, config.EndpointIP,
+		config.PreSharedKey, config.PublicKey, config.EndpointHost, config.EndpointIP,
 			config.EndpointPort = parseWireguardPeerSection(peerSection)
 	} else if !regexINISectionNotExist.MatchString(err.Error()) {
 		// can never happen
@@ -74,28 +76,56 @@ func parseWireguardInterfaceSection(interfaceSection *ini.Section) (
 	return privateKey, addresses
 }
 
-var ErrEndpointHostNotIP = errors.New("endpoint host is not an IP")
-
 func parseWireguardPeerSection(peerSection *ini.Section) (
-	preSharedKey, publicKey, endpointIP, endpointPort *string,
+	preSharedKey, publicKey, endpointHost, endpointIP, endpointPort *string,
 ) {
 	preSharedKey = getINIKeyFromSection(peerSection, "PresharedKey")
 	publicKey = getINIKeyFromSection(peerSection, "PublicKey")
 	endpoint := getINIKeyFromSection(peerSection, "Endpoint")
 	if endpoint != nil {
-		host, port, err := net.SplitHostPort(*endpoint)
-		if err == nil {
+		host, port, portSet := splitWireguardEndpoint(*endpoint)
+		if ip, err := netip.ParseAddr(host); err == nil {
+			host = ip.String()
 			endpointIP = &host
-			// IPv6 hosts contain colons; port is managed by the provider for those
-			if !strings.Contains(host, ":") {
-				endpointPort = &port
-			}
 		} else {
-			endpointIP = endpoint
+			endpointHost = &host
+		}
+		if portSet {
+			endpointPort = &port
 		}
 	}
 
-	return preSharedKey, publicKey, endpointIP, endpointPort
+	return preSharedKey, publicKey, endpointHost, endpointIP, endpointPort
+}
+
+func splitWireguardEndpoint(endpoint string) (host, port string, portSet bool) {
+	host, port, err := net.SplitHostPort(endpoint)
+	if err == nil {
+		return host, port, true
+	}
+
+	switch {
+	case strings.Count(endpoint, ":") == 0:
+		return endpoint, "", false
+	case strings.HasPrefix(endpoint, "[") && strings.HasSuffix(endpoint, "]"):
+		return strings.TrimPrefix(strings.TrimSuffix(endpoint, "]"), "["), "", false
+	case hasEmptyPortSuffix(endpoint):
+		return strings.TrimSuffix(endpoint, ":"), "", true
+	default:
+		ip, parseErr := netip.ParseAddr(endpoint)
+		if parseErr == nil {
+			return ip.String(), "", false
+		}
+		return endpoint, "", false
+	}
+}
+
+func hasEmptyPortSuffix(endpoint string) bool {
+	if !strings.HasSuffix(endpoint, ":") {
+		return false
+	}
+	trimmedEndpoint := strings.TrimSuffix(endpoint, ":")
+	return strings.Count(trimmedEndpoint, ":") == 0
 }
 
 var regexINIKeyNotExist = regexp.MustCompile(`key ".*" not exists$`)

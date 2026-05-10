@@ -3,6 +3,7 @@ package vpn
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/netip"
 
 	"github.com/qdm12/gluetun/internal/configuration/settings"
@@ -26,6 +27,11 @@ func setupWireguard(ctx context.Context, netlinker NetLinker,
 		return nil, models.Connection{}, fmt.Errorf("finding a VPN server: %w", err)
 	}
 
+	connection, err = resolveWireguardEndpoint(ctx, connection, ipv6SupportLevel.IsSupported(), logger)
+	if err != nil {
+		return nil, models.Connection{}, fmt.Errorf("resolving WireGuard endpoint: %w", err)
+	}
+
 	wireguardSettings := buildWireguardSettings(connection, settings.Wireguard, ipv6SupportLevel.IsSupported())
 
 	logger.Debug("Wireguard server public key: " + wireguardSettings.PublicKey)
@@ -43,6 +49,83 @@ func setupWireguard(ctx context.Context, netlinker NetLinker,
 	}
 
 	return wireguarder, connection, nil
+}
+
+type lookupIPAddrFunc func(ctx context.Context, host string) (ips []netip.Addr, err error)
+
+func resolveWireguardEndpoint(ctx context.Context, connection models.Connection,
+	ipv6Supported bool, logger wireguard.Logger,
+) (connectionWithResolvedIP models.Connection, err error) {
+	return resolveWireguardEndpointWithLookup(ctx, connection, ipv6Supported, logger, lookupIPAddrs)
+}
+
+func resolveWireguardEndpointWithLookup(ctx context.Context, connection models.Connection,
+	ipv6Supported bool, logger wireguard.Logger, lookup lookupIPAddrFunc,
+) (connectionWithResolvedIP models.Connection, err error) {
+	if connection.Hostname == "" {
+		return connection, nil
+	}
+
+	logger.Info("🔎 resolving WireGuard endpoint hostname " + connection.Hostname)
+
+	ips, err := lookup(ctx, connection.Hostname)
+	if err != nil {
+		logger.Error("❌ failed to resolve WireGuard endpoint hostname " + connection.Hostname +
+			": " + err.Error() + " (fail-closed)")
+		return models.Connection{}, fmt.Errorf("resolving hostname %q: %w (fail-closed)",
+			connection.Hostname, err)
+	}
+
+	connection.IP, err = pickWireguardEndpointIP(ips, ipv6Supported)
+	if err != nil {
+		logger.Error("❌ failed to resolve WireGuard endpoint hostname " + connection.Hostname +
+			": " + err.Error() + " (fail-closed)")
+		return models.Connection{}, fmt.Errorf("resolving hostname %q: %w (fail-closed)",
+			connection.Hostname, err)
+	}
+
+	logger.Info("✅ resolved WireGuard endpoint hostname " + connection.Hostname +
+		" to " + connection.IP.String())
+	return connection, nil
+}
+
+func lookupIPAddrs(ctx context.Context, host string) (ips []netip.Addr, err error) {
+	ipAddrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+
+	ips = make([]netip.Addr, 0, len(ipAddrs))
+	for i := range ipAddrs {
+		ip, ok := netip.AddrFromSlice(ipAddrs[i].IP)
+		if !ok {
+			continue
+		}
+		ips = append(ips, ip.Unmap())
+	}
+
+	return ips, nil
+}
+
+func pickWireguardEndpointIP(ips []netip.Addr, ipv6Supported bool) (ip netip.Addr, err error) {
+	if ipv6Supported {
+		for _, candidate := range ips {
+			if candidate.Is6() {
+				return candidate, nil
+			}
+		}
+	}
+
+	for _, candidate := range ips {
+		if candidate.Is4() {
+			return candidate, nil
+		}
+	}
+
+	if ipv6Supported {
+		return netip.Addr{}, fmt.Errorf("no suitable IP address found")
+	}
+	return netip.Addr{}, fmt.Errorf("no IPv4 address found")
 }
 
 func buildWireguardSettings(connection models.Connection,

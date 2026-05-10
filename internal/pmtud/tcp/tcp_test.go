@@ -4,11 +4,13 @@ package tcp
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"testing"
 	"time"
 
 	gomock "github.com/golang/mock/gomock"
+	"github.com/qdm12/gluetun/internal/firewall/iptables"
 	"github.com/qdm12/gluetun/internal/netlink"
 	"github.com/qdm12/gluetun/internal/pmtud/constants"
 	"github.com/qdm12/gluetun/internal/pmtud/ip"
@@ -105,6 +107,9 @@ func Test_runTest(t *testing.T) {
 			defer cancel()
 			err := runTest(ctx, dst, testCase.mtu, excludeMark,
 				fd, tracker, fw, logger)
+			if errors.Is(err, iptables.ErrMarkMatchModuleMissing) {
+				t.Skip("mark match module is not available, skipping TCP PMTUD tests")
+			}
 			if testCase.success {
 				require.NoError(t, err)
 			} else {

@@ -42,6 +42,8 @@ var (
 	ErrVPNTypeNotValid                 = errors.New("VPN type is not valid")
 	ErrWireguardAllowedIPNotSet        = errors.New("allowed IP is not set")
 	ErrWireguardAllowedIPsNotSet       = errors.New("allowed IPs is not set")
+	ErrWireguardEndpointHostNotValid   = errors.New("endpoint host is not valid")
+	ErrWireguardEndpointHostOrIPNotSet = errors.New("endpoint host or IP is not set")
 	ErrWireguardEndpointIPNotSet       = errors.New("endpoint IP is not set")
 	ErrWireguardEndpointPortNotAllowed = errors.New("endpoint port is not allowed")
 	ErrWireguardEndpointPortNotSet     = errors.New("endpoint port is not set")
