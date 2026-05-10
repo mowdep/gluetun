@@ -20,6 +20,5 @@ func Test_leakCheck(t *testing.T) {
 	if err != nil {
 		t.Skipf("skipping external DNS leak test: %v", err)
 	}
-	require.NoError(t, err)
 	require.NotEmpty(t, report)
 }
